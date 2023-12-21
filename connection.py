@@ -1,53 +1,38 @@
 import os
-from langchain.document_loaders import PyPDFLoader
-from langchain.vectorstores import FAISS
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
+
+import PyPDF2
+import requests
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+import re
+from bs4 import BeautifulSoup
 
 
-def get_pdf_paths(folder_path):
-    """Returns a list of the paths of all the PDFs in the given folder."""
-    pdf_paths = []
-    for root, dirs, files in os.walk(folder_path):
-        for file in files:
-            if file.endswith(".pdf"):
-                pdf_paths.append(os.path.join(root, file))
-    return pdf_paths
+def textHandler(pdf_path):
+    text = ''
+    with open(pdf_path, 'rb') as file:
+        reader = PyPDF2.PdfReader(file)
+        num_pages = reader.pages
+
+        for i in num_pages:
+            text += i.extract_text()
+    return clear_text(text)
 
 
-def index():
-    try:
-        """Read pdfs from docs folder and index them in vector database"""
-        print("starting indexing...")
-        folder_path = "docs/"
-        text = []
-        for path in get_pdf_paths(folder_path):
-            print(path)
-            loader = PyPDFLoader(path)
-            text.extend(loader.load())
-            print(f"Read data of file: {path}")
-            os.remove(path=path)
-        print("Creating text chunks...")
-        text_splitter = CharacterTextSplitter(separator="\n", chunk_size=400, chunk_overlap=50, length_function=len)
-        text_chunks = text_splitter.split_documents(text)
-        print("creating embeddings")
-        embeddings = OpenAIEmbeddings()
-        if os.path.isdir("pdf-index"):
-            print('pdf-index exists, loading')
-            vectorstore = FAISS.load_local("pdf-index", embeddings=embeddings)
-            print("adding to pdf-index")
-            vectorstore.add_documents(text_chunks)
-            print("saving pdf-index")
-            vectorstore.save_local("pdf-index")
-        else:
-            print("pdf-index does not exists, creating")
-            vectorstore = FAISS.from_documents(text_chunks, embeddings)
-            print("saving locally")
-            vectorstore.save_local("pdf-index")
-        print("Docs indexed successfully!!")
-    except Exception as e:
-        print(e)
+def urlHandler(web_url):
+    response = requests.get(web_url)
+    if response.status_code == 200:
+        text = response.text
+        return clear_text(text)
+    else:
+        return f"fail to generate with status code {response.status_code}"
 
 
-if __name__ == "__main__":
-    index()
+def clear_text(text):
+    text = BeautifulSoup(text, 'html.parser').get_text()
+    text = text.lower()
+    tokens = word_tokenize(text)
+    stop_words = set(stopwords.words('english'))
+    tokens = [word for word in tokens if word not in stop_words]
+    text = ' '.join(tokens)
+    return text
